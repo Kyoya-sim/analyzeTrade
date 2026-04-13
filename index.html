@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>トレード分析ダッシュボード</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-gray-50 text-gray-800">
+
+    <div class="max-w-6xl mx-auto p-6">
+        <header class="mb-8">
+            <h1 class="text-3xl font-bold text-blue-900">トレード分析ダッシュボード</h1>
+            <p class="text-sm text-gray-500 mt-2">データはブラウザ内にのみ保存され、外部には送信されません。</p>
+        </header>
+
+        <div class="bg-white p-6 rounded-lg shadow-md mb-8 flex flex-col md:flex-row gap-4 items-end">
+            <div class="flex-1">
+                <label class="block text-sm font-medium text-gray-700 mb-2">reference_data.csv をアップロード</label>
+                <input type="file" id="csvFileInput" accept=".csv" class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" />
+            </div>
+            
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">通貨ペア絞り込み</label>
+                <select id="pairFilter" class="block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md border">
+                    <option value="ALL">すべて表示</option>
+                    </select>
+            </div>
+
+            <button id="clearDataBtn" class="bg-red-100 text-red-600 px-4 py-2 rounded hover:bg-red-200 text-sm font-medium">データをクリア</button>
+        </div>
+
+        <div id="insightArea" class="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-8 hidden">
+            <h3 class="text-yellow-800 font-bold mb-1">💡 データからの示唆</h3>
+            <p id="insightText" class="text-yellow-700 text-sm"></p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <div class="bg-white p-6 rounded-lg shadow-md">
+                <h3 class="text-gray-500 text-sm font-medium">合計獲得pips</h3>
+                <p id="totalPips" class="text-3xl font-bold mt-2">0</p>
+            </div>
+            <div class="bg-white p-6 rounded-lg shadow-md">
+                <h3 class="text-gray-500 text-sm font-medium">トレード数</h3>
+                <p id="totalTrades" class="text-3xl font-bold mt-2">0</p>
+            </div>
+            <div class="bg-white p-6 rounded-lg shadow-md">
+                <h3 class="text-gray-500 text-sm font-medium">勝率</h3>
+                <p id="winRate" class="text-3xl font-bold mt-2">0%</p>
+            </div>
+        </div>
+
+        <div class="bg-white p-6 rounded-lg shadow-md">
+            <h3 class="text-lg font-bold mb-4">累積獲得pips推移</h3>
+            <canvas id="pipsChart" height="100"></canvas>
+        </div>
+    </div>
+
+    <script>
+        const STORAGE_KEY = 'tradeDashboardData';
+        let tradeData = [];
+        let pipsChartInstance = null;
+
+        // 初期化処理（ローカルストレージにデータがあれば読み込む）
+        window.addEventListener('DOMContentLoaded', () => {
+            const savedData = localStorage.getItem(STORAGE_KEY);
+            if (savedData) {
+                tradeData = JSON.parse(savedData);
+                updateDashboard();
+            }
+        });
+
+        // CSVファイルアップロード処理
+        document.getElementById('csvFileInput').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            Papa.parse(file, {
+                header: true,
+                skipEmptyLines: true,
+                complete: function(results) {
+                    tradeData = results.data;
+                    // ローカルストレージに保存
+                    localStorage.setItem(STORAGE_KEY, JSON.stringify(tradeData));
+                    updateDashboard();
+                }
+            });
+        });
+
+        // データのクリア
+        document.getElementById('clearDataBtn').addEventListener('click', () => {
+            localStorage.removeItem(STORAGE_KEY);
+            tradeData = [];
+            updateDashboard();
+            document.getElementById('csvFileInput').value = '';
+        });
+
+        // 絞り込み変更時
+        document.getElementById('pairFilter').addEventListener('change', () => {
+            updateDashboard(false); // 通貨ペアリストは再構築しない
+        });
+
+        // ダッシュボードの更新
+        function updateDashboard(rebuildFilter = true) {
+            if (tradeData.length === 0) {
+                resetUI();
+                return;
+            }
+
+            // 1. 通貨ペアのリスト生成（初回アップロード時のみ）
+            if (rebuildFilter) {
+                const pairs = [...new Set(tradeData.map(d => d['銘柄']).filter(Boolean))];
+                const filterSelect = document.getElementById('pairFilter');
+                filterSelect.innerHTML = '<option value="ALL">すべて表示</option>';
+                pairs.forEach(pair => {
+                    filterSelect.innerHTML += `<option value="${pair}">${pair}</option>`;
+                });
+            }
+
+            // 2. データのフィルタリング
+            const selectedPair = document.getElementById('pairFilter').value;
+            let filteredData = tradeData;
+            if (selectedPair !== 'ALL') {
+                filteredData = tradeData.filter(d => d['銘柄'] === selectedPair);
+            }
+
+            // 時間順にソート (決済日時_日本)
+            filteredData.sort((a, b) => new Date(a['決済日時_日本']) - new Date(b['決済日時_日本']));
+
+            // 3. KPIの計算
+            let totalPips = 0;
+            let winCount = 0;
+            const cumulativePipsArray = [];
+            const labels = [];
+
+            filteredData.forEach(row => {
+                const pips = parseFloat(row['損益_pips']) || 0;
+                totalPips += pips;
+                cumulativePipsArray.push(totalPips);
+                labels.push(row['決済日時_日本'].split(' ')[0]); // 日付のみ抽出
+
+                if (row['勝敗'] === 'Win') {
+                    winCount++;
+                }
+            });
+
+            const tradeCount = filteredData.length;
+            const winRate = tradeCount > 0 ? ((winCount / tradeCount) * 100).toFixed(1) : 0;
+
+            // UIへの反映
+            document.getElementById('totalPips').innerText = totalPips.toFixed(1);
+            document.getElementById('totalTrades').innerText = tradeCount;
+            document.getElementById('winRate').innerText = winRate + '%';
+
+            // 4. 自動示唆（Insight）の生成
+            generateInsights(selectedPair, tradeCount, winRate, totalPips);
+
+            // 5. グラフの描画
+            drawChart(labels, cumulativePipsArray);
+        }
+
+        // 示唆を生成する関数
+        function generateInsights(pair, count, winRate, pips) {
+            const insightArea = document.getElementById('insightArea');
+            const insightText = document.getElementById('insightText');
+            
+            if (count < 5) {
+                insightArea.classList.add('hidden');
+                return;
+            }
+
+            let message = "";
+            if (pair === 'ALL') {
+                message = "全体としてデータが蓄積されています。特定の通貨ペアに絞り込んで、得意・不得意な銘柄を分析してみましょう。";
+            } else {
+                if (winRate >= 60 && pips > 0) {
+                    message = `【${pair}】は勝率 ${winRate}% と高く、順調に利益(pips)を伸ばしています。この銘柄のエントリールールは優位性が高い可能性があります。`;
+                } else if (winRate < 40 && pips < 0) {
+                    message = `【${pair}】は勝率 ${winRate}% と低く、ドローダウンの原因になっている可能性があります。取引ルールの見直し、または取引の停止を検討する示唆が出ています。`;
+                } else {
+                    message = `【${pair}】のトレード状況です。勝率だけでなく、平均利益（リスクリワード）も合わせて確認し、期待値がプラスになっているか検証しましょう。`;
+                }
+            }
+            
+            insightText.innerText = message;
+            insightArea.classList.remove('hidden');
+        }
+
+        // グラフ描画関数
+        function drawChart(labels, data) {
+            const ctx = document.getElementById('pipsChart').getContext('2d');
+            
+            if (pipsChartInstance) {
+                pipsChartInstance.destroy();
+            }
+
+            pipsChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: '累積獲得pips',
+                        data: data,
+                        borderColor: 'rgba(59, 130, 246, 1)', // Tailwind blue-500
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        borderWidth: 2,
+                        fill: true,
+                        pointRadius: 0, // ポイントマーカーを隠して見やすく
+                        tension: 0.1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    interaction: {
+                        intersect: false,
+                        mode: 'index',
+                    },
+                    scales: {
+                        x: { display: false }, // ラベルが多いと潰れるので非表示
+                        y: { title: { display: true, text: 'Pips' } }
+                    }
+                }
+            });
+        }
+
+        function resetUI() {
+            document.getElementById('totalPips').innerText = '0';
+            document.getElementById('totalTrades').innerText = '0';
+            document.getElementById('winRate').innerText = '0%';
+            document.getElementById('insightArea').classList.add('hidden');
+            if (pipsChartInstance) pipsChartInstance.destroy();
+        }
+    </script>
+</body>
+</html>
