@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
 <title>PRO TRADE ANALYZER</title>
 
 <script src="https://cdn.tailwindcss.com"></script>
@@ -10,7 +11,7 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <style>
-.chart-container { height:260px; }
+.chart-container{height:260px;}
 </style>
 </head>
 
@@ -20,11 +21,14 @@
 
 <h1 class="text-3xl font-black mb-6">PRO TRADE ANALYZER</h1>
 
-<div class="flex gap-4 mb-4">
+<div class="flex gap-4 mb-4 flex-wrap">
 <input type="file" id="file">
-<select id="pairFilter" class="border p-2 rounded">
-<option value="ALL">すべての銘柄</option>
-</select>
+<select id="pairFilter" class="border p-2 rounded"></select>
+
+<input type="date" id="startDate" class="border p-2 rounded">
+<input type="date" id="endDate" class="border p-2 rounded">
+
+<button onclick="update()" class="bg-blue-500 text-white px-3 rounded">適用</button>
 </div>
 
 <!-- KPI -->
@@ -37,295 +41,228 @@
 
 <div class="bg-white p-4">最大ドローダウン<div id="maxDD"></div></div>
 <div class="bg-white p-4">最大連敗数<div id="maxLose"></div></div>
-<div class="bg-white p-4">平均R倍数<div id="avgR"></div></div>
-<div class="bg-white p-4">理論破産確率<div id="ruin"></div></div>
-
-<div class="bg-white p-4">モンテカルロ破産確率<div id="mcRuin"></div></div>
-<div class="bg-white p-4">モンテカルロ平均ドローダウン<div id="mcDD"></div></div>
-<div class="bg-white p-4">モンテカルロ最大ドローダウン<div id="mcWorst"></div></div>
+<div class="bg-white p-4">標準偏差<div id="stdDev"></div></div>
+<div class="bg-white p-4">ドローダウン期間<div id="ddDuration"></div></div>
 
 </div>
 
 <!-- charts -->
 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
 
-<div class="bg-white p-4"><canvas id="equity"></canvas></div>
-<div class="bg-white p-4"><canvas id="time"></canvas></div>
-<div class="bg-white p-4"><canvas id="day"></canvas></div>
-<div class="bg-white p-4"><canvas id="risk"></canvas></div>
-<div class="bg-white p-4"><canvas id="rDist"></canvas></div>
-<div class="bg-white p-4"><canvas id="ddDist"></canvas></div>
+<canvas id="equity"></canvas>
+<canvas id="timeExp"></canvas>
+<canvas id="dayExp"></canvas>
+<canvas id="rHist"></canvas>
+<canvas id="rWin"></canvas>
+<canvas id="loseSim"></canvas>
 
+</div>
+
+<h2 class="text-xl font-bold mt-10">時間帯 × 通貨ペア</h2>
+<div id="heatmap" class="overflow-auto text-xs bg-white p-2"></div>
+
+<h2 class="text-xl font-bold mt-10">トレード履歴</h2>
+<div class="overflow-auto h-64 bg-white">
+<table id="table" class="text-xs"></table>
 </div>
 
 </div>
 
 <script>
 
-let rawData = [];
+let rawData=[];
 
-document.getElementById('file').onchange = e => {
-Papa.parse(e.target.files[0], {
-header:true,
-dynamicTyping:true,
-complete: res => {
-rawData = res.data;
+document.getElementById('file').onchange=e=>{
+Papa.parse(e.target.files[0],{
+header:true,dynamicTyping:true,
+complete:r=>{
+rawData=r.data;
 setupFilter();
 update();
-}
-});
+}});
 };
 
-document.getElementById('pairFilter').onchange = update;
-
 function setupFilter(){
-const pairs = [...new Set(rawData.map(d=>d['銘柄']).filter(Boolean))];
-const select = document.getElementById('pairFilter');
-select.innerHTML = '<option value="ALL">すべての銘柄</option>';
-pairs.forEach(p=>{
-select.innerHTML += `<option value="${p}">${p}</option>`;
-});
+const pairs=[...new Set(rawData.map(d=>d['銘柄']).filter(Boolean))];
+pairFilter.innerHTML='<option value="ALL">すべて</option>';
+pairs.forEach(p=>pairFilter.innerHTML+=`<option>${p}</option>`);
 }
 
 function update(){
 
-const selected = document.getElementById('pairFilter').value;
-const data = selected==='ALL'? rawData : rawData.filter(d=>d['銘柄']===selected);
+const pair=pairFilter.value;
 
-if(data.length===0) return;
+const start=document.getElementById('startDate').value;
+const end=document.getElementById('endDate').value;
 
-data.sort((a,b)=> new Date(a['決済日時_日本']) - new Date(b['決済日時_日本']));
+let data=rawData.filter(d=>{
+if(pair!=='ALL' && d['銘柄']!==pair) return false;
+if(start && d['決済日時_日本']<start) return false;
+if(end && d['決済日時_日本']>end) return false;
+return true;
+});
 
-const wins = data.filter(d=>d['勝敗']==='Win');
-const losses = data.filter(d=>d['勝敗']==='Loss');
+if(!data.length) return;
 
-const count = data.length;
+data.sort((a,b)=>new Date(a['決済日時_日本'])-new Date(b['決済日時_日本']));
 
-const winRate = wins.length / count;
+// ===== 基本 =====
+const wins=data.filter(d=>d['勝敗']==='Win');
+const losses=data.filter(d=>d['勝敗']==='Loss');
 
-const avgWin = wins.length ? wins.reduce((a,b)=>a+b['損益_pips'],0)/wins.length : 0;
-const avgLoss = losses.length ? Math.abs(losses.reduce((a,b)=>a+b['損益_pips'],0)/losses.length) : 1;
+const winRate=wins.length/data.length;
 
-const rr = avgWin/avgLoss;
+const avgWin=wins.reduce((a,b)=>a+(b['損益_pips']||0),0)/wins.length||0;
+const avgLoss=Math.abs(losses.reduce((a,b)=>a+(b['損益_pips']||0),0)/losses.length)||1;
 
-const expectancy = winRate*avgWin - (1-winRate)*avgLoss;
+const rr=avgWin/avgLoss;
 
-const totalProfit = wins.reduce((a,b)=>a+(b['損益_純額']||0),0);
-const totalLoss = Math.abs(losses.reduce((a,b)=>a+(b['損益_純額']||0),0)) || 1;
+const expectancy=winRate*avgWin-(1-winRate)*avgLoss;
 
-const pf = totalProfit / totalLoss;
+const totalProfit=wins.reduce((a,b)=>a+(b['損益_純額']||0),0);
+const totalLoss=Math.abs(losses.reduce((a,b)=>a+(b['損益_純額']||0),0))||1;
 
-// ===== 最大ドローダウン =====
-let equity=0, peak=0, maxDD=0;
+const pf=totalProfit/totalLoss;
+
+// ===== DD =====
+let equity=0,peak=0,maxDD=0,ddDur=0,cur=0;
 let curve=[];
-
 data.forEach(d=>{
-equity += d['損益_pips']||0;
-peak = Math.max(peak,equity);
-maxDD = Math.max(maxDD, peak-equity);
+equity+=d['損益_pips']||0;
+peak=Math.max(peak,equity);
+if(equity<peak){cur++;ddDur=Math.max(ddDur,cur);}else cur=0;
+maxDD=Math.max(maxDD,peak-equity);
 curve.push(equity);
 });
 
-// ===== 最大連敗 =====
-let loseStreak=0, maxLose=0;
-
+// ===== 連敗 =====
+let lose=0,maxLose=0;
 data.forEach(d=>{
-if(d['勝敗']==='Loss'){
-loseStreak++;
-maxLose=Math.max(maxLose,loseStreak);
-}else{
-loseStreak=0;
-}
+if(d['勝敗']==='Loss'){lose++;maxLose=Math.max(maxLose,lose);}else lose=0;
 });
+
+// ===== 標準偏差 =====
+const mean=data.reduce((a,b)=>a+(b['損益_pips']||0),0)/data.length;
+const stdDev=Math.sqrt(data.reduce((a,b)=>a+Math.pow((b['損益_pips']||0)-mean,2),0)/data.length);
 
 // ===== R倍数 =====
-const rValues = data.map(d=>{
-const risk = d['リスク率_%']||1;
-return (d['損益_pips']||0)/risk;
+const rValues=data.filter(d=>d['初期SL_pips']).map(d=>d['損益_pips']/d['初期SL_pips']);
+
+// ヒストグラム
+let bins={},rWinBins={};
+
+data.forEach(d=>{
+if(!d['初期SL_pips']) return;
+const r=d['損益_pips']/d['初期SL_pips'];
+const key=Math.floor(r);
+
+if(!bins[key]) bins[key]=0;
+bins[key]++;
+
+if(!rWinBins[key]) rWinBins[key]={win:0,total:0};
+rWinBins[key].total++;
+if(d['勝敗']==='Win') rWinBins[key].win++;
 });
-const avgR = rValues.reduce((a,b)=>a+b,0)/count;
 
-// ===== 理論破産確率 =====
-const ruin = calcRuin(winRate, rr, 0.01);
+const rLabels=Object.keys(bins);
+const rCounts=Object.values(bins);
 
-// ===== モンテカルロ =====
-const mc = monteCarlo(data, 500);
+const rWinRate=rLabels.map(k=>{
+const b=rWinBins[k];
+return b ? (b.win/b.total)*100 : 0;
+});
+
+// ===== 時間帯×期待値 =====
+let timeMap={};
+data.forEach(d=>{
+const h=Math.floor(d['エントリー時_日本']);
+if(!timeMap[h]) timeMap[h]=[];
+timeMap[h].push(d['損益_pips']);
+});
+const timeLabels=Object.keys(timeMap);
+const timeExp=timeLabels.map(h=>{
+const arr=timeMap[h];
+return arr.reduce((a,b)=>a+b,0)/arr.length;
+});
+
+// ===== 曜日期待値 =====
+const days=['Mon','Tue','Wed','Thu','Fri'];
+const dayExp=days.map(day=>{
+const arr=data.filter(d=>d['曜日']===day);
+return arr.length?arr.reduce((a,b)=>a+b['損益_pips'],0)/arr.length:0;
+});
+
+// ===== 連敗シミュレーション =====
+let loseDist={};
+for(let i=0;i<500;i++){
+let shuffled=[...data].sort(()=>Math.random()-0.5);
+let streak=0,max=0;
+shuffled.forEach(d=>{
+if(d['勝敗']==='Loss'){streak++;max=Math.max(max,streak);}else streak=0;
+});
+loseDist[max]=(loseDist[max]||0)+1;
+}
+const loseLabels=Object.keys(loseDist);
+const loseCounts=Object.values(loseDist);
+
+// ===== ヒートマップ =====
+let map={};
+data.forEach(d=>{
+const key=d['銘柄']+'_'+Math.floor(d['エントリー時_日本']);
+if(!map[key]) map[key]=[];
+map[key].push(d['損益_pips']);
+});
+let html='<table><tr><th>Pair/Hour</th>';
+for(let h=0;h<24;h++) html+=`<th>${h}</th>`;
+html+='</tr>';
+
+const pairs=[...new Set(data.map(d=>d['銘柄']))];
+
+pairs.forEach(p=>{
+html+=`<tr><td>${p}</td>`;
+for(let h=0;h<24;h++){
+const arr=map[p+'_'+h]||[];
+const val=arr.length?(arr.reduce((a,b)=>a+b,0)/arr.length).toFixed(1):'';
+html+=`<td>${val}</td>`;
+}
+html+='</tr>';
+});
+html+='</table>';
+document.getElementById('heatmap').innerHTML=html;
 
 // ===== UI =====
-document.getElementById('expectancy').innerText = expectancy.toFixed(2);
-document.getElementById('winRate').innerText = (winRate*100).toFixed(1)+'%';
-document.getElementById('rr').innerText = rr.toFixed(2);
-document.getElementById('pf').innerText = pf.toFixed(2);
-document.getElementById('maxDD').innerText = maxDD.toFixed(1);
-document.getElementById('maxLose').innerText = maxLose;
-document.getElementById('avgR').innerText = avgR.toFixed(2);
-document.getElementById('ruin').innerText = ruin.toFixed(2)+'%';
+expectancy.innerText=expectancy.toFixed(2);
+winRate.innerText=(winRate*100).toFixed(1)+'%';
+rr.innerText=rr.toFixed(2);
+pf.innerText=pf.toFixed(2);
+maxDD.innerText=maxDD.toFixed(1);
+maxLose.innerText=maxLose;
+stdDev.innerText=stdDev.toFixed(2);
+ddDuration.innerText=ddDur;
 
-document.getElementById('mcRuin').innerText = mc.ruin.toFixed(2)+'%';
-document.getElementById('mcDD').innerText = mc.avgDD.toFixed(1);
-document.getElementById('mcWorst').innerText = mc.worstDD.toFixed(1);
+// ===== charts =====
+new Chart(equity,{type:'line',data:{labels:curve.map((_,i)=>i),datasets:[{data:curve}]},
+options:{plugins:{title:{display:true,text:'累積損益'}}}});
 
-// ===== charts（再生成）=====
-renderChart('equity','line',curve,'累積損益（pips）','トレード順','累積pips');
+new Chart(timeExpChart,{type:'bar',data:{labels:timeLabels,datasets:[{data:timeExp}]},
+options:{plugins:{title:{display:true,text:'時間帯別期待値'}}}});
 
-renderScatter(
-'time',
-data.map(d=>({x:d['エントリー時_日本'],y:d['損益_pips']})),
-'時間帯別 損益分布',
-'時間（0-24）',
-'pips'
-);
+new Chart(dayExpChart,{type:'bar',data:{labels:days,datasets:[{data:dayExp}]},
+options:{plugins:{title:{display:true,text:'曜日別期待値'}}}});
 
-renderBar(
-'day',
-['Mon','Tue','Wed','Thu','Fri'],
-data,
-'曜日別 勝率'
-);
+new Chart(rHist,{type:'bar',data:{labels:rLabels,datasets:[{data:rCounts}]},
+options:{plugins:{title:{display:true,text:'R倍数分布'}}}});
 
-renderScatter(
-'risk',
-data.map(d=>({x:d['リスク率_%'],y:d['損益_pips']})),
-'リスク率 vs 損益',
-'リスク率 (%)',
-'pips'
-);
+new Chart(rWin,{type:'line',data:{labels:rLabels,datasets:[{data:rWinRate}]},
+options:{plugins:{title:{display:true,text:'R倍数 × 勝率'}}}});
 
-renderChart(
-'rDist',
-'bar',
-rValues,
-'R倍数 分布',
-'トレード',
-'R倍数'
-);
+new Chart(loseSim,{type:'bar',data:{labels:loseLabels,datasets:[{data:loseCounts}]},
+options:{plugins:{title:{display:true,text:'連敗シミュレーション'}}}});
 
-renderChart(
-'ddDist',
-'bar',
-mc.ddList,
-'モンテカルロ 最大ドローダウン分布',
-'シミュレーション回数',
-'ドローダウン(pips)'
-);
+// ===== table =====
+table.innerHTML='<tr>'+Object.keys(data[0]).map(k=>`<th>${k}</th>`).join('')+'</tr>'+
+data.map(d=>'<tr>'+Object.values(d).map(v=>`<td>${v}</td>`).join('')+'</tr>').join('');
 
-}
-
-// ===== chart helpers =====
-function renderChart(id,type,data,title,xLabel="",yLabel=""){
-new Chart(document.getElementById(id),{
-type:type,
-data:{
-labels:data.map((_,i)=>i),
-datasets:[{
-data:data
-}]
-},
-options:{
-plugins:{
-title:{
-display:true,
-text:title,
-font:{size:16,weight:'bold'}
-},
-legend:{display:false}
-},
-scales:{
-x:{title:{display:!!xLabel,text:xLabel}},
-y:{title:{display:!!yLabel,text:yLabel}}
-}
-}
-});
-}
-
-function renderScatter(id,data,title,xLabel,yLabel){
-new Chart(document.getElementById(id),{
-type:'scatter',
-data:{
-datasets:[{
-data:data
-}]
-},
-options:{
-plugins:{
-title:{
-display:true,
-text:title,
-font:{size:16,weight:'bold'}
-},
-legend:{display:false}
-},
-scales:{
-x:{title:{display:true,text:xLabel}},
-y:{title:{display:true,text:yLabel}}
-}
-}
-});
-}
-
-function renderBar(id,labels,data,title){
-const values = labels.map(l=>{
-const t=data.filter(d=>d['曜日']===l);
-return t.length ? t.filter(d=>d['勝敗']==='Win').length/t.length*100 : 0;
-});
-
-new Chart(document.getElementById(id),{
-type:'bar',
-data:{
-labels:labels,
-datasets:[{data:values}]
-},
-options:{
-plugins:{
-title:{
-display:true,
-text:title,
-font:{size:16,weight:'bold'}
-},
-legend:{display:false}
-},
-scales:{
-y:{title:{display:true,text:'勝率 (%)'}}
-}
-}
-});
-}
-
-// ===== モンテカルロ =====
-function monteCarlo(data,n){
-let ruinCount=0;
-let ddList=[];
-
-for(let i=0;i<n;i++){
-let shuffled=[...data].sort(()=>Math.random()-0.5);
-
-let equity=0,peak=0,maxDD=0;
-
-shuffled.forEach(d=>{
-equity+=d['損益_pips']||0;
-peak=Math.max(peak,equity);
-maxDD=Math.max(maxDD,peak-equity);
-});
-
-ddList.push(maxDD);
-
-if(equity<-1000) ruinCount++;
-}
-
-return {
-ruin:(ruinCount/n)*100,
-avgDD:ddList.reduce((a,b)=>a+b,0)/n,
-worstDD:Math.max(...ddList),
-ddList
-};
-}
-
-// ===== 理論破産 =====
-function calcRuin(P,R,r){
-if(P*(1+R)<=1) return 100;
-const edge=P*R-(1-P);
-if(edge<=0) return 100;
-return Math.pow((1-edge)/(1+edge),1/r)*100;
 }
 
 </script>
