@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PRO ANALYZER + MonteCarlo</title>
+<title>PRO TRADE ANALYZER</title>
 
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
@@ -18,26 +18,31 @@
 
 <div class="max-w-7xl mx-auto p-6">
 
-<h1 class="text-3xl font-black mb-6">PRO ANALYZER</h1>
+<h1 class="text-3xl font-black mb-6">PRO TRADE ANALYZER</h1>
 
+<div class="flex gap-4 mb-4">
 <input type="file" id="file">
+<select id="pairFilter" class="border p-2 rounded">
+<option value="ALL">すべての銘柄</option>
+</select>
+</div>
 
 <!-- KPI -->
 <div class="grid grid-cols-2 md:grid-cols-4 gap-4 my-6">
 
-<div class="bg-white p-4">期待値 <div id="expectancy"></div></div>
-<div class="bg-white p-4">勝率 <div id="winRate"></div></div>
-<div class="bg-white p-4">RR <div id="rr"></div></div>
-<div class="bg-white p-4">PF <div id="pf"></div></div>
+<div class="bg-white p-4">期待値<div id="expectancy"></div></div>
+<div class="bg-white p-4">勝率<div id="winRate"></div></div>
+<div class="bg-white p-4">リスクリワード比<div id="rr"></div></div>
+<div class="bg-white p-4">プロフィットファクター<div id="pf"></div></div>
 
-<div class="bg-white p-4">最大DD <div id="maxDD"></div></div>
-<div class="bg-white p-4">最大連敗 <div id="maxLose"></div></div>
-<div class="bg-white p-4">平均R <div id="avgR"></div></div>
-<div class="bg-white p-4">理論破産確率 <div id="ruin"></div></div>
+<div class="bg-white p-4">最大ドローダウン<div id="maxDD"></div></div>
+<div class="bg-white p-4">最大連敗数<div id="maxLose"></div></div>
+<div class="bg-white p-4">平均R倍数<div id="avgR"></div></div>
+<div class="bg-white p-4">理論破産確率<div id="ruin"></div></div>
 
-<div class="bg-white p-4">MC破産確率 <div id="mcRuin"></div></div>
-<div class="bg-white p-4">MC平均DD <div id="mcDD"></div></div>
-<div class="bg-white p-4">MC最悪DD <div id="mcWorst"></div></div>
+<div class="bg-white p-4">モンテカルロ破産確率<div id="mcRuin"></div></div>
+<div class="bg-white p-4">モンテカルロ平均ドローダウン<div id="mcDD"></div></div>
+<div class="bg-white p-4">モンテカルロ最大ドローダウン<div id="mcWorst"></div></div>
 
 </div>
 
@@ -57,20 +62,37 @@
 
 <script>
 
-let data = [];
+let rawData = [];
 
 document.getElementById('file').onchange = e => {
 Papa.parse(e.target.files[0], {
 header:true,
 dynamicTyping:true,
 complete: res => {
-data = res.data;
-analyze();
+rawData = res.data;
+setupFilter();
+update();
 }
 });
 };
 
-function analyze(){
+document.getElementById('pairFilter').onchange = update;
+
+function setupFilter(){
+const pairs = [...new Set(rawData.map(d=>d['銘柄']).filter(Boolean))];
+const select = document.getElementById('pairFilter');
+select.innerHTML = '<option value="ALL">すべての銘柄</option>';
+pairs.forEach(p=>{
+select.innerHTML += `<option value="${p}">${p}</option>`;
+});
+}
+
+function update(){
+
+const selected = document.getElementById('pairFilter').value;
+const data = selected==='ALL'? rawData : rawData.filter(d=>d['銘柄']===selected);
+
+if(data.length===0) return;
 
 data.sort((a,b)=> new Date(a['決済日時_日本']) - new Date(b['決済日時_日本']));
 
@@ -93,45 +115,41 @@ const totalLoss = Math.abs(losses.reduce((a,b)=>a+(b['損益_純額']||0),0)) ||
 
 const pf = totalProfit / totalLoss;
 
-// ===== DD =====
-let equity = 0;
-let peak = 0;
-let maxDD = 0;
-let curve = [];
+// ===== 最大ドローダウン =====
+let equity=0, peak=0, maxDD=0;
+let curve=[];
 
 data.forEach(d=>{
 equity += d['損益_pips']||0;
-peak = Math.max(peak, equity);
-let dd = peak - equity;
-maxDD = Math.max(maxDD, dd);
+peak = Math.max(peak,equity);
+maxDD = Math.max(maxDD, peak-equity);
 curve.push(equity);
 });
 
-// ===== 連敗 =====
-let loseStreak = 0;
-let maxLose = 0;
+// ===== 最大連敗 =====
+let loseStreak=0, maxLose=0;
 
 data.forEach(d=>{
 if(d['勝敗']==='Loss'){
 loseStreak++;
-maxLose = Math.max(maxLose, loseStreak);
+maxLose=Math.max(maxLose,loseStreak);
 }else{
-loseStreak = 0;
+loseStreak=0;
 }
 });
 
-// ===== R =====
+// ===== R倍数 =====
 const rValues = data.map(d=>{
-const risk = d['リスク率_%'] || 1;
+const risk = d['リスク率_%']||1;
 return (d['損益_pips']||0)/risk;
 });
 const avgR = rValues.reduce((a,b)=>a+b,0)/count;
 
-// ===== 理論破産 =====
+// ===== 理論破産確率 =====
 const ruin = calcRuin(winRate, rr, 0.01);
 
 // ===== モンテカルロ =====
-const mc = monteCarlo(data, 1000);
+const mc = monteCarlo(data, 500);
 
 // ===== UI =====
 document.getElementById('expectancy').innerText = expectancy.toFixed(2);
@@ -147,101 +165,167 @@ document.getElementById('mcRuin').innerText = mc.ruin.toFixed(2)+'%';
 document.getElementById('mcDD').innerText = mc.avgDD.toFixed(1);
 document.getElementById('mcWorst').innerText = mc.worstDD.toFixed(1);
 
-// ===== charts =====
+// ===== charts（再生成）=====
+renderChart('equity','line',curve,'累積損益（pips）','トレード順','累積pips');
 
-new Chart(document.getElementById('equity'),{
-type:'line',
-data:{labels:data.map((_,i)=>i),datasets:[{data:curve}]}
-});
+renderScatter(
+'time',
+data.map(d=>({x:d['エントリー時_日本'],y:d['損益_pips']})),
+'時間帯別 損益分布',
+'時間（0-24）',
+'pips'
+);
 
-new Chart(document.getElementById('time'),{
-type:'scatter',
-data:{datasets:[{data:data.map(d=>({x:d['エントリー時_日本'],y:d['損益_pips']}))}]}
-});
+renderBar(
+'day',
+['Mon','Tue','Wed','Thu','Fri'],
+data,
+'曜日別 勝率'
+);
 
-const days=['Mon','Tue','Wed','Thu','Fri'];
-const dayData = days.map(day=>{
-const t=data.filter(d=>d['曜日']===day);
-return t.length ? t.filter(d=>d['勝敗']==='Win').length/t.length*100 : 0;
-});
-new Chart(document.getElementById('day'),{
-type:'bar',
-data:{labels:days,datasets:[{data:dayData}]}
-});
+renderScatter(
+'risk',
+data.map(d=>({x:d['リスク率_%'],y:d['損益_pips']})),
+'リスク率 vs 損益',
+'リスク率 (%)',
+'pips'
+);
 
-new Chart(document.getElementById('risk'),{
-type:'scatter',
-data:{datasets:[{data:data.map(d=>({x:d['リスク率_%'],y:d['損益_pips']}))}]}
-});
+renderChart(
+'rDist',
+'bar',
+rValues,
+'R倍数 分布',
+'トレード',
+'R倍数'
+);
 
-new Chart(document.getElementById('rDist'),{
-type:'bar',
-data:{labels:rValues.map((_,i)=>i),datasets:[{data:rValues}]}
-});
+renderChart(
+'ddDist',
+'bar',
+mc.ddList,
+'モンテカルロ 最大ドローダウン分布',
+'シミュレーション回数',
+'ドローダウン(pips)'
+);
 
-// DD分布
-new Chart(document.getElementById('ddDist'),{
-type:'bar',
+}
+
+// ===== chart helpers =====
+function renderChart(id,type,data,title,xLabel="",yLabel=""){
+new Chart(document.getElementById(id),{
+type:type,
 data:{
-labels:mc.ddList.map((_,i)=>i),
-datasets:[{data:mc.ddList}]
+labels:data.map((_,i)=>i),
+datasets:[{
+data:data
+}]
+},
+options:{
+plugins:{
+title:{
+display:true,
+text:title,
+font:{size:16,weight:'bold'}
+},
+legend:{display:false}
+},
+scales:{
+x:{title:{display:!!xLabel,text:xLabel}},
+y:{title:{display:!!yLabel,text:yLabel}}
+}
 }
 });
+}
 
+function renderScatter(id,data,title,xLabel,yLabel){
+new Chart(document.getElementById(id),{
+type:'scatter',
+data:{
+datasets:[{
+data:data
+}]
+},
+options:{
+plugins:{
+title:{
+display:true,
+text:title,
+font:{size:16,weight:'bold'}
+},
+legend:{display:false}
+},
+scales:{
+x:{title:{display:true,text:xLabel}},
+y:{title:{display:true,text:yLabel}}
+}
+}
+});
+}
+
+function renderBar(id,labels,data,title){
+const values = labels.map(l=>{
+const t=data.filter(d=>d['曜日']===l);
+return t.length ? t.filter(d=>d['勝敗']==='Win').length/t.length*100 : 0;
+});
+
+new Chart(document.getElementById(id),{
+type:'bar',
+data:{
+labels:labels,
+datasets:[{data:values}]
+},
+options:{
+plugins:{
+title:{
+display:true,
+text:title,
+font:{size:16,weight:'bold'}
+},
+legend:{display:false}
+},
+scales:{
+y:{title:{display:true,text:'勝率 (%)'}}
+}
+}
+});
 }
 
 // ===== モンテカルロ =====
-function monteCarlo(data, n){
-
-let ruinCount = 0;
-let ddList = [];
+function monteCarlo(data,n){
+let ruinCount=0;
+let ddList=[];
 
 for(let i=0;i<n;i++){
+let shuffled=[...data].sort(()=>Math.random()-0.5);
 
-let shuffled = shuffle([...data]);
-
-let equity = 0;
-let peak = 0;
-let maxDD = 0;
+let equity=0,peak=0,maxDD=0;
 
 shuffled.forEach(d=>{
-equity += d['損益_pips']||0;
-peak = Math.max(peak,equity);
-maxDD = Math.max(maxDD, peak-equity);
+equity+=d['損益_pips']||0;
+peak=Math.max(peak,equity);
+maxDD=Math.max(maxDD,peak-equity);
 });
 
 ddList.push(maxDD);
 
-if(equity < -1000) ruinCount++; // 適当な破産ライン
+if(equity<-1000) ruinCount++;
 }
-
-const avgDD = ddList.reduce((a,b)=>a+b,0)/n;
-const worstDD = Math.max(...ddList);
 
 return {
 ruin:(ruinCount/n)*100,
-avgDD,
-worstDD,
+avgDD:ddList.reduce((a,b)=>a+b,0)/n,
+worstDD:Math.max(...ddList),
 ddList
 };
 }
 
-// シャッフル
-function shuffle(arr){
-for(let i=arr.length-1;i>0;i--){
-const j=Math.floor(Math.random()*(i+1));
-[arr[i],arr[j]]=[arr[j],arr[i]];
-}
-return arr;
-}
-
-// 理論破産
+// ===== 理論破産 =====
 function calcRuin(P,R,r){
 if(P*(1+R)<=1) return 100;
-const edge = P*R - (1-P);
+const edge=P*R-(1-P);
 if(edge<=0) return 100;
-const units = 1/r;
-return Math.pow((1-edge)/(1+edge),units)*100;
+return Math.pow((1-edge)/(1+edge),1/r)*100;
 }
 
 </script>
