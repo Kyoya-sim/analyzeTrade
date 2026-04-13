@@ -3,102 +3,101 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Trade Intelligence Dashboard</title>
+    <title>Risk & Reward Analyzer</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        .chart-container { position: relative; height: 280px; width: 100%; }
-        /* スクロールバーのカスタマイズ */
-        ::-webkit-scrollbar { width: 6px; height: 6px; }
-        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        .chart-container { position: relative; height: 260px; width: 100%; }
+        .kpi-card { @apply bg-white p-5 rounded-2xl shadow-sm border border-slate-100 transition hover:shadow-md; }
     </style>
 </head>
 <body class="bg-slate-50 text-slate-900 font-sans">
 
     <div class="max-w-7xl mx-auto p-4 md:p-8">
-        <header class="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4 border-b pb-6">
+        <header class="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
-                <h1 class="text-3xl font-black text-slate-800 tracking-tight">TRADE ANALYZER <span class="text-blue-600">PRO</span></h1>
-                <p class="text-slate-500 font-medium">検証データから統計的優位性を特定する</p>
+                <h1 class="text-3xl font-black text-slate-800 tracking-tight">RISK <span class="text-indigo-600">WATCHER</span></h1>
+                <p class="text-slate-500 font-medium">破産確率と資金管理の統計分析</p>
             </div>
-            <div class="flex items-center gap-3">
-                <button id="clearDataBtn" class="bg-white border border-red-200 text-red-500 px-4 py-2 rounded-lg hover:bg-red-50 text-sm font-bold transition">データをリセット</button>
-            </div>
+            <button id="clearDataBtn" class="bg-red-50 text-red-600 px-4 py-2 rounded-xl hover:bg-red-100 text-sm font-bold transition">リセット</button>
         </header>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
             <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                <label class="block text-xs font-bold text-slate-400 uppercase mb-3 tracking-widest">Step 1: Reference Data を読み込む</label>
-                <input type="file" id="refFileInput" accept=".csv" class="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-bold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer" />
+                <label class="block text-xs font-bold text-slate-400 uppercase mb-3">CSV読み込み (reference_data)</label>
+                <input type="file" id="refFileInput" accept=".csv" class="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-bold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer" />
             </div>
             <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                <label class="block text-xs font-bold text-slate-400 uppercase mb-3 tracking-widest">Step 2: 絞り込み条件</label>
-                <select id="pairFilter" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all">
-                    <option value="ALL">すべての銘柄を表示</option>
-                </select>
+                <label class="block text-xs font-bold text-slate-400 uppercase mb-3">通貨ペア・銘柄フィルタ</label>
+                <select id="pairFilter" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none"></select>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+            <div class="kpi-card">
+                <span class="text-slate-400 text-[10px] font-bold uppercase">期待値 (pips)</span>
+                <div id="expectancy" class="text-2xl font-black text-slate-800">-</div>
+            </div>
+            <div class="kpi-card">
+                <span class="text-slate-400 text-[10px] font-bold uppercase">勝率</span>
+                <div id="winRate" class="text-2xl font-black text-emerald-600">-</div>
+            </div>
+            <div class="kpi-card">
+                <span class="text-slate-400 text-[10px] font-bold uppercase">平均RR比</span>
+                <div id="avgRR" class="text-2xl font-black text-indigo-600">-</div>
+            </div>
+            <div class="kpi-card">
+                <span class="text-slate-400 text-[10px] font-bold uppercase">PF</span>
+                <div id="pf" class="text-2xl font-black text-orange-500">-</div>
             </div>
         </div>
 
         <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-            <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                <span class="text-slate-400 text-xs font-bold uppercase tracking-tighter">期待値 (pips/回)</span>
-                <div id="expectancy" class="text-3xl font-black text-blue-600 mt-1">-</div>
+            <div class="kpi-card bg-indigo-50 border-indigo-100">
+                <span class="text-indigo-400 text-[10px] font-bold uppercase">平均リスク率</span>
+                <div id="avgRisk" class="text-2xl font-black text-indigo-700">-</div>
             </div>
-            <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                <span class="text-slate-400 text-xs font-bold uppercase tracking-tighter">平均RR (実効)</span>
-                <div id="avgRR" class="text-3xl font-black text-indigo-600 mt-1">-</div>
+            <div class="kpi-card bg-red-50 border-red-100">
+                <span class="text-red-400 text-[10px] font-bold uppercase">最大リスク率</span>
+                <div id="maxRisk" class="text-2xl font-black text-red-700">-</div>
             </div>
-            <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                <span class="text-slate-400 text-xs font-bold uppercase tracking-tighter">トータル勝率</span>
-                <div id="winRate" class="text-3xl font-black text-emerald-600 mt-1">-</div>
+            <div class="kpi-card bg-slate-800">
+                <span class="text-slate-400 text-[10px] font-bold uppercase">破産確率</span>
+                <div id="ruinProb" class="text-2xl font-black text-white">-</div>
             </div>
-            <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                <span class="text-slate-400 text-xs font-bold uppercase tracking-tighter">PF</span>
-                <div id="pf" class="text-3xl font-black text-orange-500 mt-1">-</div>
+            <div class="kpi-card">
+                <span class="text-slate-400 text-[10px] font-bold uppercase">総トレード数</span>
+                <div id="totalTrades" class="text-2xl font-black text-slate-800">-</div>
             </div>
         </div>
 
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
             <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                <h3 class="font-bold text-slate-800 mb-4 flex items-center gap-2">📈 累積獲得pipsの推移</h3>
+                <h3 class="font-bold text-slate-800 mb-4">累積損益曲線 (pips)</h3>
                 <div class="chart-container"><canvas id="mainChart"></canvas></div>
             </div>
-            <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                <h3 class="font-bold text-slate-800 mb-4 flex items-center gap-2">⏰ 時間帯別損益分布</h3>
-                <div class="chart-container"><canvas id="timeScatterChart"></canvas></div>
-            </div>
-            <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                <h3 class="font-bold text-slate-800 mb-4 flex items-center gap-2">📅 曜日別の優位性 (勝率)</h3>
-                <div class="chart-container"><canvas id="dayWinRateChart"></canvas></div>
-            </div>
-            
-            <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                <h3 class="font-bold text-slate-800 mb-4 flex items-center gap-2">🗓️ 月次パフォーマンス自動集計</h3>
-                <div class="overflow-x-auto">
-                    <table class="min-w-full text-sm text-left">
-                        <thead>
+            <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                <h3 class="font-bold text-slate-800 mb-4">月別パフォーマンス自動集計</h3>
+                <div class="overflow-x-auto h-[260px]">
+                    <table class="min-w-full text-xs text-left">
+                        <thead class="sticky top-0 bg-white">
                             <tr class="text-slate-400 border-b">
-                                <th class="pb-3 font-bold uppercase text-[10px]">年月</th>
-                                <th class="pb-3 font-bold uppercase text-[10px]">回数</th>
-                                <th class="pb-3 font-bold uppercase text-[10px]">勝率</th>
-                                <th class="pb-3 font-bold uppercase text-[10px]">Pips</th>
-                                <th class="pb-3 font-bold uppercase text-[10px]">平均RR</th>
+                                <th class="pb-2 font-bold">年月</th><th class="pb-2">勝率</th><th class="pb-2">Pips</th><th class="pb-2">リスク(Avg)</th>
                             </tr>
                         </thead>
-                        <tbody id="monthlyTableBody" class="divide-y divide-slate-100">
-                            </tbody>
+                        <tbody id="monthlyTableBody" class="divide-y divide-slate-50"></tbody>
                     </table>
                 </div>
             </div>
         </div>
 
-        <div id="insightBox" class="bg-slate-800 text-white p-8 rounded-3xl shadow-xl hidden">
+        <div id="insightBox" class="bg-white border-2 border-indigo-500 p-8 rounded-3xl shadow-xl hidden">
             <div class="flex items-start gap-4">
-                <div class="bg-blue-500 p-2 rounded-lg text-2xl">💡</div>
+                <div class="text-3xl">🛡️</div>
                 <div>
-                    <h3 class="text-xl font-bold mb-2">検証データからの示唆</h3>
-                    <p id="insightContent" class="text-slate-300 leading-relaxed"></p>
+                    <h3 class="text-xl font-bold text-slate-800 mb-2">リスク管理の診断結果</h3>
+                    <p id="insightContent" class="text-slate-600 leading-relaxed"></p>
                 </div>
             </div>
         </div>
@@ -107,14 +106,11 @@
     <script>
         let rawData = [];
         let charts = {};
-        const STORAGE_KEY = 'trade_data_master';
+        const STORAGE_KEY = 'trade_data_v3';
 
         window.onload = () => {
             const saved = localStorage.getItem(STORAGE_KEY);
-            if(saved) {
-                rawData = JSON.parse(saved);
-                updateDashboard(true);
-            }
+            if(saved) { rawData = JSON.parse(saved); updateDashboard(true); }
         };
 
         document.getElementById('refFileInput').onchange = (e) => {
@@ -131,148 +127,140 @@
         };
 
         document.getElementById('pairFilter').onchange = () => updateDashboard(false);
-        document.getElementById('clearDataBtn').onclick = () => {
-            if(confirm('全てのデータを削除しますか？')) {
-                localStorage.clear();
-                location.reload();
-            }
-        };
+        document.getElementById('clearDataBtn').onclick = () => { localStorage.clear(); location.reload(); };
 
         function updateDashboard(rebuildFilter) {
             if (rebuildFilter) {
                 const pairs = [...new Set(rawData.map(d => d['銘柄']).filter(Boolean))].sort();
                 const select = document.getElementById('pairFilter');
-                select.innerHTML = '<option value="ALL">すべての銘柄を表示</option>';
+                select.innerHTML = '<option value="ALL">すべての銘柄</option>';
                 pairs.forEach(p => select.innerHTML += `<option value="${p}">${p}</option>`);
             }
 
             const selectedPair = document.getElementById('pairFilter').value;
             const filtered = selectedPair === 'ALL' ? rawData : rawData.filter(d => d['銘柄'] === selectedPair);
-            
-            // 時間順ソート
             filtered.sort((a, b) => new Date(a['決済日時_日本']) - new Date(b['決済日時_日本']));
 
             const stats = calculateStats(filtered);
             renderKPIs(stats);
             renderCharts(filtered);
             renderMonthlyTable(filtered);
-            generateInsights(stats, filtered, selectedPair);
+            generateInsights(stats);
         }
 
-        // 統計計算ロジック
         function calculateStats(data) {
-            const trades = data.length;
-            if(trades === 0) return null;
+            const count = data.length;
+            if(count === 0) return null;
 
             const wins = data.filter(d => d['勝敗'] === 'Win');
             const losses = data.filter(d => d['勝敗'] === 'Loss');
             
-            const totalPips = data.reduce((acc, d) => acc + (d['損益_pips'] || 0), 0);
-            const winRate = (wins.length / trades) * 100;
-            
-            const avgWinPips = wins.length ? (wins.reduce((acc, d) => acc + d['損益_pips'], 0) / wins.length) : 0;
-            const avgLossPips = losses.length ? Math.abs(losses.reduce((acc, d) => acc + d['損益_pips'], 0) / losses.length) : 1;
-            const rr = avgWinPips / avgLossPips;
+            const winRate = (wins.length / count);
+            const avgWin = wins.length ? wins.reduce((acc, d) => acc + d['損益_pips'], 0) / wins.length : 0;
+            const avgLoss = losses.length ? Math.abs(losses.reduce((acc, d) => acc + d['損益_pips'], 0) / losses.length) : 1;
+            const rr = avgWin / avgLoss;
 
-            const expectancy = (winRate/100 * avgWinPips) - ((1 - winRate/100) * avgLossPips);
-            
+            // リスク集計
+            const riskRates = data.map(d => d['リスク率_%'] || 0);
+            const avgRisk = riskRates.reduce((a,b)=>a+b,0) / count;
+            const maxRisk = Math.max(...riskRates);
+
+            // 破産確率 (バルサラの近似式)
+            const ruinProb = calculateRuinProbability(winRate, rr, avgRisk / 100);
+
+            const totalPips = data.reduce((acc, d) => acc + (d['損益_pips'] || 0), 0);
             const totalProfit = wins.reduce((acc, d) => acc + (d['損益_純額'] || 0), 0);
             const totalLoss = Math.abs(losses.reduce((acc, d) => acc + (d['損益_純額'] || 0), 0)) || 1;
 
-            return { trades, winRate, totalPips, rr, expectancy, pf: totalProfit / totalLoss };
+            return { 
+                count, winRate: winRate*100, totalPips, rr, pf: totalProfit / totalLoss, 
+                avgRisk, maxRisk, ruinProb, expectancy: (winRate * avgWin) - ((1-winRate) * avgLoss)
+            };
+        }
+
+        // 破産確率の計算ロジック
+        function calculateRuinProbability(P, R, r) {
+            if (P * (1 + R) <= 1) return 100; // 期待値がマイナスなら破産確率は100%
+            
+            // 近似式を用いた計算
+            // x = P * x^(R+1) + (1-P) の解を求めるプロセスを簡略化
+            const edge = (P * R) - (1 - P);
+            if (edge <= 0) return 100;
+
+            // ユニット数 (1 / リスク率)
+            const units = 1 / r;
+            // 破産確率の推定値
+            const prob = Math.pow(( (1 - (P - (1 - P)/R)) / (1 + (P - (1 - P)/R)) ), units);
+            return Math.min(100, Math.max(0, prob * 100));
         }
 
         function renderKPIs(s) {
             if(!s) return;
             document.getElementById('expectancy').innerText = s.expectancy.toFixed(2);
-            document.getElementById('avgRR').innerText = s.rr.toFixed(2);
             document.getElementById('winRate').innerText = s.winRate.toFixed(1) + '%';
+            document.getElementById('avgRR').innerText = s.rr.toFixed(2);
             document.getElementById('pf').innerText = s.pf.toFixed(2);
+            document.getElementById('avgRisk').innerText = s.avgRisk.toFixed(2) + '%';
+            document.getElementById('maxRisk').innerText = s.maxRisk.toFixed(2) + '%';
+            document.getElementById('totalTrades').innerText = s.count;
+            
+            const ruinEl = document.getElementById('ruinProb');
+            ruinEl.innerText = s.ruinProb.toFixed(2) + '%';
+            ruinEl.className = `text-2xl font-black ${s.ruinProb > 1 ? 'text-red-400' : 'text-emerald-400'}`;
         }
 
-        // 月次テーブルの動的生成
         function renderMonthlyTable(data) {
             const groups = {};
             data.forEach(d => {
-                const month = d['決済日時_日本'].substring(0, 7); // "2025.01"
-                if(!groups[month]) groups[month] = [];
-                groups[month].push(d);
+                const m = d['決済日時_日本'].substring(0, 7);
+                if(!groups[m]) groups[m] = [];
+                groups[m].push(d);
             });
-
-            const sortedMonths = Object.keys(groups).sort().reverse();
             const body = document.getElementById('monthlyTableBody');
-            body.innerHTML = sortedMonths.map(m => {
+            body.innerHTML = Object.keys(groups).sort().reverse().map(m => {
                 const s = calculateStats(groups[m]);
-                return `
-                    <tr class="hover:bg-slate-50 transition">
-                        <td class="py-4 font-bold text-slate-700">${m.replace('.', '-')}</td>
-                        <td class="py-4">${s.trades}</td>
-                        <td class="py-4 text-slate-500">${s.winRate.toFixed(1)}%</td>
-                        <td class="py-4 font-bold ${s.totalPips >= 0 ? 'text-emerald-600' : 'text-red-500'}">${s.totalPips.toFixed(1)}</td>
-                        <td class="py-4 text-slate-500">${s.rr.toFixed(2)}</td>
-                    </tr>
-                `;
+                return `<tr>
+                    <td class="py-3 font-bold">${m}</td>
+                    <td>${s.winRate.toFixed(1)}%</td>
+                    <td class="font-bold ${s.totalPips>=0?'text-emerald-600':'text-red-500'}">${s.totalPips.toFixed(1)}</td>
+                    <td class="text-slate-500">${s.avgRisk.toFixed(2)}%</td>
+                </tr>`;
             }).join('');
         }
 
         function renderCharts(data) {
-            // 1. 累積pips
             let sum = 0;
             const cumData = data.map(d => { sum += (d['損益_pips'] || 0); return sum; });
             const labels = data.map(d => d['決済日時_日本'].split(' ')[0]);
             createChart('mainChart', 'line', labels, [{ 
-                label: '累積Pips', data: cumData, borderColor: '#3b82f6', borderWidth: 3, pointRadius: 0, fill: true, backgroundColor: 'rgba(59,130,246,0.05)', tension: 0.2 
+                data: cumData, borderColor: '#6366f1', borderWidth: 3, pointRadius: 0, fill: true, backgroundColor: 'rgba(99,102,241,0.05)', tension: 0.2 
             }]);
-
-            // 2. 曜日別勝率
-            const daysOrder = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
-            const dayStats = daysOrder.map(day => {
-                const dList = data.filter(d => d['曜日'] === day);
-                return dList.length ? (dList.filter(d => d['勝敗'] === 'Win').length / dList.length) * 100 : 0;
-            });
-            createChart('dayWinRateChart', 'bar', daysOrder, [{ label: '勝率 %', data: dayStats, backgroundColor: '#10b981', borderRadius: 8 }]);
-
-            // 3. 時間帯散布図
-            const scatterData = data.map(d => ({ x: d['エントリー時_日本'], y: d['損益_pips'] }));
-            createChart('timeScatterChart', 'scatter', null, [{ 
-                label: '獲得Pips', data: scatterData, backgroundColor: 'rgba(99, 102, 241, 0.6)' 
-            }], {
-                scales: { x: { min: 0, max: 24, title: { display: true, text: '24H' } }, y: { title: { display: true, text: 'Pips' } } }
-            });
         }
 
-        function generateInsights(s, data, pair) {
-            if(!s || s.trades < 5) return;
+        function generateInsights(s) {
+            if(!s || s.count < 10) return;
             const box = document.getElementById('insightBox');
             const content = document.getElementById('insightContent');
             
-            // 曜日分析
-            const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
-            const dayPerf = days.map(d => {
-                const trades = data.filter(t => t['曜日'] === d);
-                return { day: d, wr: trades.length ? trades.filter(t => t['勝敗']==='Win').length / trades.length : 0 };
-            });
-            const best = dayPerf.reduce((a, b) => a.wr > b.wr ? a : b);
-
-            let text = `${selectedPair === 'ALL' ? '全体' : selectedPair}の分析結果です。<strong>${best.day}曜日</strong>の勝率が最も高く、取引の優位性があります。`;
-            
-            if(s.rr < 1) {
-                text += ` 現在、平均RRが 1.0 を下回っています。利伸ばしを意識するか、損切り位置を最適化することで、勝率を維持したまま期待値をさらに高められる可能性があります。`;
-            } else if (s.winRate > 60) {
-                text += ` 勝率 ${s.winRate.toFixed(1)}% と非常に安定しています。現在のロジックを維持しつつ、ロットサイズの見直しを検討しても良いかもしれません。`;
+            let msg = "";
+            if (s.ruinProb > 10) {
+                msg = `警告：破産確率が <strong>${s.ruinProb.toFixed(1)}%</strong> と非常に高い水準です。主な原因は「${s.rr < 1 ? 'リスクリワード比の低さ' : '1トレードあたりのリスクの大きさ'}」にあります。ロットサイズを下げるか、損小利大を徹底する必要があります。`;
+            } else if (s.maxRisk > 10) {
+                msg = `注意：最大リスク率が <strong>${s.maxRisk.toFixed(1)}%</strong> に達しているトレードがあります。一回のミスで資金の1割を失う設定は、連敗時に心理的負担が大きくなり、ルールの逸脱を招きます。`;
+            } else {
+                msg = `素晴らしい管理状況です。破産確率は <strong>1%未満</strong> に抑えられており、現在の平均リスク（${s.avgRisk.toFixed(2)}%）を維持する限り、長期的に資金を溶かすリスクは極めて低いです。`;
             }
 
-            content.innerHTML = text;
+            content.innerHTML = msg;
             box.classList.remove('hidden');
         }
 
-        function createChart(id, type, labels, datasets, options = {}) {
+        function createChart(id, type, labels, datasets) {
             if(charts[id]) charts[id].destroy();
-            const ctx = document.getElementById(id).getContext('2d');
-            charts[id] = new Chart(ctx, {
+            charts[id] = new Chart(document.getElementById(id).getContext('2d'), {
                 type: type,
                 data: { labels: labels, datasets: datasets },
-                options: { ...options, maintainAspectRatio: false, responsive: true, plugins: { legend: { display: false } } }
+                options: { maintainAspectRatio: false, plugins: { legend: { display: false } } }
             });
         }
     </script>
