@@ -3,234 +3,277 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>トレード分析ダッシュボード</title>
+    <title>Trade Intelligence Dashboard</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .chart-container { position: relative; height: 280px; width: 100%; }
+        /* スクロールバーのカスタマイズ */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+    </style>
 </head>
-<body class="bg-gray-50 text-gray-800">
+<body class="bg-slate-50 text-slate-900 font-sans">
 
-    <div class="max-w-6xl mx-auto p-6">
-        <header class="mb-8">
-            <h1 class="text-3xl font-bold text-blue-900">トレード分析ダッシュボード</h1>
-            <p class="text-sm text-gray-500 mt-2">データはブラウザ内にのみ保存され、外部には送信されません。</p>
+    <div class="max-w-7xl mx-auto p-4 md:p-8">
+        <header class="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4 border-b pb-6">
+            <div>
+                <h1 class="text-3xl font-black text-slate-800 tracking-tight">TRADE ANALYZER <span class="text-blue-600">PRO</span></h1>
+                <p class="text-slate-500 font-medium">検証データから統計的優位性を特定する</p>
+            </div>
+            <div class="flex items-center gap-3">
+                <button id="clearDataBtn" class="bg-white border border-red-200 text-red-500 px-4 py-2 rounded-lg hover:bg-red-50 text-sm font-bold transition">データをリセット</button>
+            </div>
         </header>
 
-        <div class="bg-white p-6 rounded-lg shadow-md mb-8 flex flex-col md:flex-row gap-4 items-end">
-            <div class="flex-1">
-                <label class="block text-sm font-medium text-gray-700 mb-2">reference_data.csv をアップロード</label>
-                <input type="file" id="csvFileInput" accept=".csv" class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" />
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                <label class="block text-xs font-bold text-slate-400 uppercase mb-3 tracking-widest">Step 1: Reference Data を読み込む</label>
+                <input type="file" id="refFileInput" accept=".csv" class="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-bold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer" />
+            </div>
+            <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                <label class="block text-xs font-bold text-slate-400 uppercase mb-3 tracking-widest">Step 2: 絞り込み条件</label>
+                <select id="pairFilter" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all">
+                    <option value="ALL">すべての銘柄を表示</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+            <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                <span class="text-slate-400 text-xs font-bold uppercase tracking-tighter">期待値 (pips/回)</span>
+                <div id="expectancy" class="text-3xl font-black text-blue-600 mt-1">-</div>
+            </div>
+            <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                <span class="text-slate-400 text-xs font-bold uppercase tracking-tighter">平均RR (実効)</span>
+                <div id="avgRR" class="text-3xl font-black text-indigo-600 mt-1">-</div>
+            </div>
+            <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                <span class="text-slate-400 text-xs font-bold uppercase tracking-tighter">トータル勝率</span>
+                <div id="winRate" class="text-3xl font-black text-emerald-600 mt-1">-</div>
+            </div>
+            <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                <span class="text-slate-400 text-xs font-bold uppercase tracking-tighter">PF</span>
+                <div id="pf" class="text-3xl font-black text-orange-500 mt-1">-</div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+            <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                <h3 class="font-bold text-slate-800 mb-4 flex items-center gap-2">📈 累積獲得pipsの推移</h3>
+                <div class="chart-container"><canvas id="mainChart"></canvas></div>
+            </div>
+            <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                <h3 class="font-bold text-slate-800 mb-4 flex items-center gap-2">⏰ 時間帯別損益分布</h3>
+                <div class="chart-container"><canvas id="timeScatterChart"></canvas></div>
+            </div>
+            <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                <h3 class="font-bold text-slate-800 mb-4 flex items-center gap-2">📅 曜日別の優位性 (勝率)</h3>
+                <div class="chart-container"><canvas id="dayWinRateChart"></canvas></div>
             </div>
             
-            <div>
-                <label class="block text-sm font-medium text-gray-700 mb-2">通貨ペア絞り込み</label>
-                <select id="pairFilter" class="block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md border">
-                    <option value="ALL">すべて表示</option>
-                    </select>
-            </div>
-
-            <button id="clearDataBtn" class="bg-red-100 text-red-600 px-4 py-2 rounded hover:bg-red-200 text-sm font-medium">データをクリア</button>
-        </div>
-
-        <div id="insightArea" class="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-8 hidden">
-            <h3 class="text-yellow-800 font-bold mb-1">💡 データからの示唆</h3>
-            <p id="insightText" class="text-yellow-700 text-sm"></p>
-        </div>
-
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            <div class="bg-white p-6 rounded-lg shadow-md">
-                <h3 class="text-gray-500 text-sm font-medium">合計獲得pips</h3>
-                <p id="totalPips" class="text-3xl font-bold mt-2">0</p>
-            </div>
-            <div class="bg-white p-6 rounded-lg shadow-md">
-                <h3 class="text-gray-500 text-sm font-medium">トレード数</h3>
-                <p id="totalTrades" class="text-3xl font-bold mt-2">0</p>
-            </div>
-            <div class="bg-white p-6 rounded-lg shadow-md">
-                <h3 class="text-gray-500 text-sm font-medium">勝率</h3>
-                <p id="winRate" class="text-3xl font-bold mt-2">0%</p>
+            <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                <h3 class="font-bold text-slate-800 mb-4 flex items-center gap-2">🗓️ 月次パフォーマンス自動集計</h3>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full text-sm text-left">
+                        <thead>
+                            <tr class="text-slate-400 border-b">
+                                <th class="pb-3 font-bold uppercase text-[10px]">年月</th>
+                                <th class="pb-3 font-bold uppercase text-[10px]">回数</th>
+                                <th class="pb-3 font-bold uppercase text-[10px]">勝率</th>
+                                <th class="pb-3 font-bold uppercase text-[10px]">Pips</th>
+                                <th class="pb-3 font-bold uppercase text-[10px]">平均RR</th>
+                            </tr>
+                        </thead>
+                        <tbody id="monthlyTableBody" class="divide-y divide-slate-100">
+                            </tbody>
+                    </table>
+                </div>
             </div>
         </div>
 
-        <div class="bg-white p-6 rounded-lg shadow-md">
-            <h3 class="text-lg font-bold mb-4">累積獲得pips推移</h3>
-            <canvas id="pipsChart" height="100"></canvas>
+        <div id="insightBox" class="bg-slate-800 text-white p-8 rounded-3xl shadow-xl hidden">
+            <div class="flex items-start gap-4">
+                <div class="bg-blue-500 p-2 rounded-lg text-2xl">💡</div>
+                <div>
+                    <h3 class="text-xl font-bold mb-2">検証データからの示唆</h3>
+                    <p id="insightContent" class="text-slate-300 leading-relaxed"></p>
+                </div>
+            </div>
         </div>
     </div>
 
     <script>
-        const STORAGE_KEY = 'tradeDashboardData';
-        let tradeData = [];
-        let pipsChartInstance = null;
+        let rawData = [];
+        let charts = {};
+        const STORAGE_KEY = 'trade_data_master';
 
-        // 初期化処理（ローカルストレージにデータがあれば読み込む）
-        window.addEventListener('DOMContentLoaded', () => {
-            const savedData = localStorage.getItem(STORAGE_KEY);
-            if (savedData) {
-                tradeData = JSON.parse(savedData);
-                updateDashboard();
+        window.onload = () => {
+            const saved = localStorage.getItem(STORAGE_KEY);
+            if(saved) {
+                rawData = JSON.parse(saved);
+                updateDashboard(true);
             }
-        });
+        };
 
-        // CSVファイルアップロード処理
-        document.getElementById('csvFileInput').addEventListener('change', function(e) {
+        document.getElementById('refFileInput').onchange = (e) => {
             const file = e.target.files[0];
-            if (!file) return;
-
+            if(!file) return;
             Papa.parse(file, {
-                header: true,
-                skipEmptyLines: true,
-                complete: function(results) {
-                    tradeData = results.data;
-                    // ローカルストレージに保存
-                    localStorage.setItem(STORAGE_KEY, JSON.stringify(tradeData));
-                    updateDashboard();
+                header: true, dynamicTyping: true, skipEmptyLines: true,
+                complete: (results) => {
+                    rawData = results.data;
+                    localStorage.setItem(STORAGE_KEY, JSON.stringify(rawData));
+                    updateDashboard(true);
                 }
             });
-        });
+        };
 
-        // データのクリア
-        document.getElementById('clearDataBtn').addEventListener('click', () => {
-            localStorage.removeItem(STORAGE_KEY);
-            tradeData = [];
-            updateDashboard();
-            document.getElementById('csvFileInput').value = '';
-        });
-
-        // 絞り込み変更時
-        document.getElementById('pairFilter').addEventListener('change', () => {
-            updateDashboard(false); // 通貨ペアリストは再構築しない
-        });
-
-        // ダッシュボードの更新
-        function updateDashboard(rebuildFilter = true) {
-            if (tradeData.length === 0) {
-                resetUI();
-                return;
+        document.getElementById('pairFilter').onchange = () => updateDashboard(false);
+        document.getElementById('clearDataBtn').onclick = () => {
+            if(confirm('全てのデータを削除しますか？')) {
+                localStorage.clear();
+                location.reload();
             }
+        };
 
-            // 1. 通貨ペアのリスト生成（初回アップロード時のみ）
+        function updateDashboard(rebuildFilter) {
             if (rebuildFilter) {
-                const pairs = [...new Set(tradeData.map(d => d['銘柄']).filter(Boolean))];
-                const filterSelect = document.getElementById('pairFilter');
-                filterSelect.innerHTML = '<option value="ALL">すべて表示</option>';
-                pairs.forEach(pair => {
-                    filterSelect.innerHTML += `<option value="${pair}">${pair}</option>`;
-                });
+                const pairs = [...new Set(rawData.map(d => d['銘柄']).filter(Boolean))].sort();
+                const select = document.getElementById('pairFilter');
+                select.innerHTML = '<option value="ALL">すべての銘柄を表示</option>';
+                pairs.forEach(p => select.innerHTML += `<option value="${p}">${p}</option>`);
             }
 
-            // 2. データのフィルタリング
             const selectedPair = document.getElementById('pairFilter').value;
-            let filteredData = tradeData;
-            if (selectedPair !== 'ALL') {
-                filteredData = tradeData.filter(d => d['銘柄'] === selectedPair);
-            }
+            const filtered = selectedPair === 'ALL' ? rawData : rawData.filter(d => d['銘柄'] === selectedPair);
+            
+            // 時間順ソート
+            filtered.sort((a, b) => new Date(a['決済日時_日本']) - new Date(b['決済日時_日本']));
 
-            // 時間順にソート (決済日時_日本)
-            filteredData.sort((a, b) => new Date(a['決済日時_日本']) - new Date(b['決済日時_日本']));
+            const stats = calculateStats(filtered);
+            renderKPIs(stats);
+            renderCharts(filtered);
+            renderMonthlyTable(filtered);
+            generateInsights(stats, filtered, selectedPair);
+        }
 
-            // 3. KPIの計算
-            let totalPips = 0;
-            let winCount = 0;
-            const cumulativePipsArray = [];
-            const labels = [];
+        // 統計計算ロジック
+        function calculateStats(data) {
+            const trades = data.length;
+            if(trades === 0) return null;
 
-            filteredData.forEach(row => {
-                const pips = parseFloat(row['損益_pips']) || 0;
-                totalPips += pips;
-                cumulativePipsArray.push(totalPips);
-                labels.push(row['決済日時_日本'].split(' ')[0]); // 日付のみ抽出
+            const wins = data.filter(d => d['勝敗'] === 'Win');
+            const losses = data.filter(d => d['勝敗'] === 'Loss');
+            
+            const totalPips = data.reduce((acc, d) => acc + (d['損益_pips'] || 0), 0);
+            const winRate = (wins.length / trades) * 100;
+            
+            const avgWinPips = wins.length ? (wins.reduce((acc, d) => acc + d['損益_pips'], 0) / wins.length) : 0;
+            const avgLossPips = losses.length ? Math.abs(losses.reduce((acc, d) => acc + d['損益_pips'], 0) / losses.length) : 1;
+            const rr = avgWinPips / avgLossPips;
 
-                if (row['勝敗'] === 'Win') {
-                    winCount++;
-                }
+            const expectancy = (winRate/100 * avgWinPips) - ((1 - winRate/100) * avgLossPips);
+            
+            const totalProfit = wins.reduce((acc, d) => acc + (d['損益_純額'] || 0), 0);
+            const totalLoss = Math.abs(losses.reduce((acc, d) => acc + (d['損益_純額'] || 0), 0)) || 1;
+
+            return { trades, winRate, totalPips, rr, expectancy, pf: totalProfit / totalLoss };
+        }
+
+        function renderKPIs(s) {
+            if(!s) return;
+            document.getElementById('expectancy').innerText = s.expectancy.toFixed(2);
+            document.getElementById('avgRR').innerText = s.rr.toFixed(2);
+            document.getElementById('winRate').innerText = s.winRate.toFixed(1) + '%';
+            document.getElementById('pf').innerText = s.pf.toFixed(2);
+        }
+
+        // 月次テーブルの動的生成
+        function renderMonthlyTable(data) {
+            const groups = {};
+            data.forEach(d => {
+                const month = d['決済日時_日本'].substring(0, 7); // "2025.01"
+                if(!groups[month]) groups[month] = [];
+                groups[month].push(d);
             });
 
-            const tradeCount = filteredData.length;
-            const winRate = tradeCount > 0 ? ((winCount / tradeCount) * 100).toFixed(1) : 0;
-
-            // UIへの反映
-            document.getElementById('totalPips').innerText = totalPips.toFixed(1);
-            document.getElementById('totalTrades').innerText = tradeCount;
-            document.getElementById('winRate').innerText = winRate + '%';
-
-            // 4. 自動示唆（Insight）の生成
-            generateInsights(selectedPair, tradeCount, winRate, totalPips);
-
-            // 5. グラフの描画
-            drawChart(labels, cumulativePipsArray);
+            const sortedMonths = Object.keys(groups).sort().reverse();
+            const body = document.getElementById('monthlyTableBody');
+            body.innerHTML = sortedMonths.map(m => {
+                const s = calculateStats(groups[m]);
+                return `
+                    <tr class="hover:bg-slate-50 transition">
+                        <td class="py-4 font-bold text-slate-700">${m.replace('.', '-')}</td>
+                        <td class="py-4">${s.trades}</td>
+                        <td class="py-4 text-slate-500">${s.winRate.toFixed(1)}%</td>
+                        <td class="py-4 font-bold ${s.totalPips >= 0 ? 'text-emerald-600' : 'text-red-500'}">${s.totalPips.toFixed(1)}</td>
+                        <td class="py-4 text-slate-500">${s.rr.toFixed(2)}</td>
+                    </tr>
+                `;
+            }).join('');
         }
 
-        // 示唆を生成する関数
-        function generateInsights(pair, count, winRate, pips) {
-            const insightArea = document.getElementById('insightArea');
-            const insightText = document.getElementById('insightText');
-            
-            if (count < 5) {
-                insightArea.classList.add('hidden');
-                return;
-            }
+        function renderCharts(data) {
+            // 1. 累積pips
+            let sum = 0;
+            const cumData = data.map(d => { sum += (d['損益_pips'] || 0); return sum; });
+            const labels = data.map(d => d['決済日時_日本'].split(' ')[0]);
+            createChart('mainChart', 'line', labels, [{ 
+                label: '累積Pips', data: cumData, borderColor: '#3b82f6', borderWidth: 3, pointRadius: 0, fill: true, backgroundColor: 'rgba(59,130,246,0.05)', tension: 0.2 
+            }]);
 
-            let message = "";
-            if (pair === 'ALL') {
-                message = "全体としてデータが蓄積されています。特定の通貨ペアに絞り込んで、得意・不得意な銘柄を分析してみましょう。";
-            } else {
-                if (winRate >= 60 && pips > 0) {
-                    message = `【${pair}】は勝率 ${winRate}% と高く、順調に利益(pips)を伸ばしています。この銘柄のエントリールールは優位性が高い可能性があります。`;
-                } else if (winRate < 40 && pips < 0) {
-                    message = `【${pair}】は勝率 ${winRate}% と低く、ドローダウンの原因になっている可能性があります。取引ルールの見直し、または取引の停止を検討する示唆が出ています。`;
-                } else {
-                    message = `【${pair}】のトレード状況です。勝率だけでなく、平均利益（リスクリワード）も合わせて確認し、期待値がプラスになっているか検証しましょう。`;
-                }
-            }
-            
-            insightText.innerText = message;
-            insightArea.classList.remove('hidden');
-        }
+            // 2. 曜日別勝率
+            const daysOrder = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+            const dayStats = daysOrder.map(day => {
+                const dList = data.filter(d => d['曜日'] === day);
+                return dList.length ? (dList.filter(d => d['勝敗'] === 'Win').length / dList.length) * 100 : 0;
+            });
+            createChart('dayWinRateChart', 'bar', daysOrder, [{ label: '勝率 %', data: dayStats, backgroundColor: '#10b981', borderRadius: 8 }]);
 
-        // グラフ描画関数
-        function drawChart(labels, data) {
-            const ctx = document.getElementById('pipsChart').getContext('2d');
-            
-            if (pipsChartInstance) {
-                pipsChartInstance.destroy();
-            }
-
-            pipsChartInstance = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: labels,
-                    datasets: [{
-                        label: '累積獲得pips',
-                        data: data,
-                        borderColor: 'rgba(59, 130, 246, 1)', // Tailwind blue-500
-                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                        borderWidth: 2,
-                        fill: true,
-                        pointRadius: 0, // ポイントマーカーを隠して見やすく
-                        tension: 0.1
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    interaction: {
-                        intersect: false,
-                        mode: 'index',
-                    },
-                    scales: {
-                        x: { display: false }, // ラベルが多いと潰れるので非表示
-                        y: { title: { display: true, text: 'Pips' } }
-                    }
-                }
+            // 3. 時間帯散布図
+            const scatterData = data.map(d => ({ x: d['エントリー時_日本'], y: d['損益_pips'] }));
+            createChart('timeScatterChart', 'scatter', null, [{ 
+                label: '獲得Pips', data: scatterData, backgroundColor: 'rgba(99, 102, 241, 0.6)' 
+            }], {
+                scales: { x: { min: 0, max: 24, title: { display: true, text: '24H' } }, y: { title: { display: true, text: 'Pips' } } }
             });
         }
 
-        function resetUI() {
-            document.getElementById('totalPips').innerText = '0';
-            document.getElementById('totalTrades').innerText = '0';
-            document.getElementById('winRate').innerText = '0%';
-            document.getElementById('insightArea').classList.add('hidden');
-            if (pipsChartInstance) pipsChartInstance.destroy();
+        function generateInsights(s, data, pair) {
+            if(!s || s.trades < 5) return;
+            const box = document.getElementById('insightBox');
+            const content = document.getElementById('insightContent');
+            
+            // 曜日分析
+            const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+            const dayPerf = days.map(d => {
+                const trades = data.filter(t => t['曜日'] === d);
+                return { day: d, wr: trades.length ? trades.filter(t => t['勝敗']==='Win').length / trades.length : 0 };
+            });
+            const best = dayPerf.reduce((a, b) => a.wr > b.wr ? a : b);
+
+            let text = `${selectedPair === 'ALL' ? '全体' : selectedPair}の分析結果です。<strong>${best.day}曜日</strong>の勝率が最も高く、取引の優位性があります。`;
+            
+            if(s.rr < 1) {
+                text += ` 現在、平均RRが 1.0 を下回っています。利伸ばしを意識するか、損切り位置を最適化することで、勝率を維持したまま期待値をさらに高められる可能性があります。`;
+            } else if (s.winRate > 60) {
+                text += ` 勝率 ${s.winRate.toFixed(1)}% と非常に安定しています。現在のロジックを維持しつつ、ロットサイズの見直しを検討しても良いかもしれません。`;
+            }
+
+            content.innerHTML = text;
+            box.classList.remove('hidden');
+        }
+
+        function createChart(id, type, labels, datasets, options = {}) {
+            if(charts[id]) charts[id].destroy();
+            const ctx = document.getElementById(id).getContext('2d');
+            charts[id] = new Chart(ctx, {
+                type: type,
+                data: { labels: labels, datasets: datasets },
+                options: { ...options, maintainAspectRatio: false, responsive: true, plugins: { legend: { display: false } } }
+            });
         }
     </script>
 </body>
