@@ -71,6 +71,7 @@
 <script>
 
 let rawData=[];
+let charts = {};
 
 document.getElementById('file').onchange=e=>{
 Papa.parse(e.target.files[0],{
@@ -88,13 +89,36 @@ pairFilter.innerHTML='<option value="ALL">すべて</option>';
 pairs.forEach(p=>pairFilter.innerHTML+=`<option>${p}</option>`);
 }
 
-function update(){
-
+function createChart(id, config){
+  if(charts[id]) charts[id].destroy();
+  const ctx = document.getElementById(id).getContext('2d');
+  charts[id] = new Chart(ctx, config);
+}
+  
+function buildEquityMap(data){
+  let eq=0;
+  return data.sort((a,b)=>new Date(a['決済日時_日本'])-new Date(b['決済日時_日本']))
+    .map(d=>{
+      eq += d['損益_pips'] || 0;
+      return { date:d['決済日時_日本'], equity:eq };
+    });
+}
+  
+function update(){  
 const pair=pairFilter.value;
 
-const start=document.getElementById('startDate').value;
-const end=document.getElementById('endDate').value;
-
+const start = startDate.value || null;
+const end = endDate.value || null;
+const equityMap = buildEquityMap(rawData);
+const baseEquity = start ? getStartEquity(start) : 0;
+const filtered = rawData.filter(d=>{
+  const date = d['決済日時_日本'];
+  if(pair!=='ALL' && d['銘柄']!==pair) return false;
+  if(start && date < start) return false;
+  if(end && date > end) return false;
+  return true;
+});
+  
 let data=rawData.filter(d=>{
 if(pair!=='ALL' && d['銘柄']!==pair) return false;
 if(start && d['決済日時_日本']<start) return false;
@@ -241,22 +265,25 @@ stdDev.innerText=stdDev.toFixed(2);
 ddDuration.innerText=ddDur;
 
 // ===== charts =====
-new Chart(equity,{type:'line',data:{labels:curve.map((_,i)=>i),datasets:[{data:curve}]},
+createChart('equity',{type:'line',data:{labels:curve.map((_,i)=>i),datasets:[{data:curve}]},
 options:{plugins:{title:{display:true,text:'累積損益'}}}});
+  
+createChart('timeExp',{
+  type:'bar',
+  data:{ labels:timeLabels, datasets:[{data:timeExp}]},
+  options:{ plugins:{ title:{display:true,text:'時間帯別期待値'}}}
+});
 
-new Chart(timeExpChart,{type:'bar',data:{labels:timeLabels,datasets:[{data:timeExp}]},
-options:{plugins:{title:{display:true,text:'時間帯別期待値'}}}});
-
-new Chart(dayExpChart,{type:'bar',data:{labels:days,datasets:[{data:dayExp}]},
+createChart('dayExpChart',{type:'bar',data:{labels:days,datasets:[{data:dayExp}]},
 options:{plugins:{title:{display:true,text:'曜日別期待値'}}}});
 
-new Chart(rHist,{type:'bar',data:{labels:rLabels,datasets:[{data:rCounts}]},
+createChart('rHist',{type:'bar',data:{labels:rLabels,datasets:[{data:rCounts}]},
 options:{plugins:{title:{display:true,text:'R倍数分布'}}}});
 
-new Chart(rWin,{type:'line',data:{labels:rLabels,datasets:[{data:rWinRate}]},
+createChart('rWin',{type:'line',data:{labels:rLabels,datasets:[{data:rWinRate}]},
 options:{plugins:{title:{display:true,text:'R倍数 × 勝率'}}}});
 
-new Chart(loseSim,{type:'bar',data:{labels:loseLabels,datasets:[{data:loseCounts}]},
+createChart('loseSim',{type:'bar',data:{labels:loseLabels,datasets:[{data:loseCounts}]},
 options:{plugins:{title:{display:true,text:'連敗シミュレーション'}}}});
 
 // ===== table =====
